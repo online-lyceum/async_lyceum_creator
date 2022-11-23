@@ -1,0 +1,20 @@
+version: '3'
+services:
+  async_lyceum_creator:
+    image: async-lyceum-creator
+    restart: always
+    env_file:
+      - .variables.env
+    volumes:
+      - "lyceum-timetables:/timetables"
+    networks:
+      front_net:
+      default:
+
+networks:
+  front_net:
+    external: true
+
+volumes:
+  lyceum-timetables:
+

@@ -1,1 +1,3 @@
-# async_lyceum_creator
+# Async lyceum creator
+##
+This is an asynchronous lesson creator.
