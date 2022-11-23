@@ -2,7 +2,10 @@ from setuptools import setup, find_packages
 
 
 install_requires = [
-    'aiohttp'
+    'aiohttp',
+    'uvloop',
+    'pandas',
+    'numpy'
 ]
 
 setup(
