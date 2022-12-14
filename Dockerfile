@@ -1,5 +1,13 @@
-FROM python:3.10-slim
+FROM python:3.11-slim
+
 WORKDIR /app
-COPY ./dist/*.whl /wheels/
-RUN pip3 install /wheels/*
-CMD async_lyceum_api -H $POSTGRES_HOST -S $POSTGRES_PASSWORD
+COPY requirements.txt ./
+RUN pip3 install -r requirements.txt
+
+COPY setup.py ./
+COPY async_lyceum_creator ./
+RUN pip3 install .
+
+COPY timetables ./
+
+CMD create_lessons -H ${HOST}
