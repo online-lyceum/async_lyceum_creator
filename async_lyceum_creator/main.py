@@ -1,21 +1,30 @@
 from argparse import ArgumentParser
 import requests
+import asyncio
+import aiohttp
 import pandas as pd
 
 
 URL = 'http://localhost:8080/api'
+session = requests.Session()
+classes_cache = {}
+subgroups_cache = {}
 
 
 def create_class(school_id: int, number: int, letter: str):
+    if (number, letter) in classes_cache.keys():
+        return classes_cache[(number, letter)]
     body = {'number': number, 'letter': letter}
-    with requests.post(f'{URL}/school/{school_id}/class',
+    with session.post(f'{URL}/school/{school_id}/class',
                        json=body) as resp:
-        return resp.json()['class_id']
+        class_id = resp.json()['class_id']
+        classes_cache[(number, letter)] = class_id
+        return class_id
 
 
 def create_school(name: str, city: str, place: str):
     body = {'name': name, 'city': city, 'place': place}
-    with requests.post(f'{URL}/school', json=body) as resp:
+    with session.post(f'{URL}/school', json=body) as resp:
         json_resp = resp.json()
         return json_resp['school_id']
 
@@ -42,10 +51,14 @@ def create_classes(school_id: int, df: pd.DataFrame):
 
 
 def create_subgroup(class_id: int, subgroup: str):
+    if (class_id, subgroup) in subgroups_cache.keys():
+        return subgroups_cache[(class_id, subgroup)]
     body = {'name': subgroup}
-    with requests.post(f'{URL}/class/{class_id}/subgroup',
+    with session.post(f'{URL}/class/{class_id}/subgroup',
                        json=body) as resp:
-        return resp.json()['subgroup_id']
+        subgroup_id = resp.json()['subgroup_id']
+        subgroups_cache[(class_id, subgroup)] = subgroup_id
+        return subgroup_id
 
 
 def create_subgroups(df: pd.DataFrame):
@@ -56,7 +69,7 @@ def create_subgroups(df: pd.DataFrame):
     return df
 
 
-def create_lesson(lesson, school_id: int):
+async def create_lesson(lesson, school_id: int, session):
     lesson_name = str(lesson.LessonName)
     body = {
         'name': lesson_name[0].upper() + lesson_name[1:],
@@ -72,21 +85,20 @@ def create_lesson(lesson, school_id: int):
         'weekday': int(lesson.Weekday),
         'teacher_id': int(lesson.TeacherID)
     }
-    with requests.post(f'{URL}/school/{school_id}/lesson', json=body) as resp:
-        lesson_id = resp.json()['lesson_id']
+    async with session.post(f'{URL}/school/{school_id}/lesson', json=body) as resp:
+        lesson_id = (await resp.json())['lesson_id']
     body = {'lesson_id': lesson_id}
-    with requests.post(f'{URL}/subgroup/{lesson.SubgroupID}/lesson',
+    async with session.post(f'{URL}/subgroup/{lesson.SubgroupID}/lesson',
                        json=body) as resp:
-        assert resp.status_code // 100 == 2
+        assert resp.status // 100 == 2
 
 
-def create_lessons(df: pd.DataFrame, school_id: int):
-    c = df.shape[0] // 10
-    for i, lesson in enumerate(df.iloc):
-        create_lesson(lesson, school_id)
-        if i % c == 0:
-            print(f'{i // c * 10}%')
-
+async def create_lessons(df: pd.DataFrame, school_id: int):
+    c = df.shape[0] // 20 
+    async with aiohttp.ClientSession() as session:
+        async with asyncio.TaskGroup() as tg:
+            for lesson in df.iloc:
+                tg.create_task(create_lesson(lesson, school_id, session))
     return df
 
 
@@ -96,7 +108,7 @@ def create_table_for_school(file: str, name: str, city: str, place: str):
     school_id = create_school(name, city, place)
     df = create_classes(school_id, df)
     df = create_subgroups(df)
-    create_lessons(df, school_id)
+    asyncio.run(create_lessons(df, school_id))
 
 
 def create_all():
