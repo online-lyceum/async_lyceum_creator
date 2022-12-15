@@ -1,7 +1,5 @@
 from argparse import ArgumentParser
 import requests
-import asyncio
-import aiohttp
 import pandas as pd
 
 
@@ -69,7 +67,7 @@ def create_subgroups(df: pd.DataFrame):
     return df
 
 
-async def create_lesson(lesson, school_id: int, session):
+def create_lesson(lesson, school_id: int):
     lesson_name = str(lesson.LessonName)
     body = {
         'name': lesson_name[0].upper() + lesson_name[1:],
@@ -85,20 +83,19 @@ async def create_lesson(lesson, school_id: int, session):
         'weekday': int(lesson.Weekday),
         'teacher_id': int(lesson.TeacherID)
     }
-    async with session.post(f'{URL}/school/{school_id}/lesson', json=body) as resp:
-        lesson_id = (await resp.json())['lesson_id']
+    status = 0
+    with session.post(f'{URL}/school/{school_id}/lesson', json=body) as resp:
+                lesson_id = resp.json()['lesson_id']
     body = {'lesson_id': lesson_id}
-    async with session.post(f'{URL}/subgroup/{lesson.SubgroupID}/lesson',
+    with session.post(f'{URL}/subgroup/{lesson.SubgroupID}/lesson',
                        json=body) as resp:
-        assert resp.status // 100 == 2
+        assert resp.status_code // 100 == 2
 
 
-async def create_lessons(df: pd.DataFrame, school_id: int):
+def create_lessons(df: pd.DataFrame, school_id: int):
     c = df.shape[0] // 20 
-    async with aiohttp.ClientSession() as session:
-        async with asyncio.TaskGroup() as tg:
-            for lesson in df.iloc:
-                tg.create_task(create_lesson(lesson, school_id, session))
+    for lesson in df.iloc:
+        create_lesson(lesson, school_id)
     return df
 
 
@@ -108,7 +105,7 @@ def create_table_for_school(file: str, name: str, city: str, place: str):
     school_id = create_school(name, city, place)
     df = create_classes(school_id, df)
     df = create_subgroups(df)
-    asyncio.run(create_lessons(df, school_id))
+    create_lessons(df, school_id)
 
 
 def create_all():
