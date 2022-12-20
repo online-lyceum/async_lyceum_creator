@@ -1,7 +1,28 @@
+import asyncio
 from argparse import ArgumentParser
+import datetime as dt
+from typing import Optional
+from time import monotonic
+
+import aiohttp
 import pandas as pd
 import requests
-from pydantic import BaseSettings
+from pydantic import BaseSettings, BaseModel
+
+
+class Date(BaseModel):
+    year: int
+    month: int
+    day: int
+
+    class Config:
+        orm_mode = True
+
+
+class Semester(BaseModel):
+    start_date: Date
+    end_date: Date
+    week_reverse: Optional[bool]
 
 
 class Config(BaseSettings):
@@ -13,6 +34,7 @@ class Config(BaseSettings):
 
 config = Config()
 session = requests.Session()
+async_session: Optional[aiohttp.ClientSession] = None
 
 classes_cache = {}
 subgroups_cache = {}
@@ -39,11 +61,11 @@ def create_teacher(teacher: str) -> int:
 
 
 def create_teachers(df: pd.DataFrame) -> pd.DataFrame:
-    teachers_ids = []
+    teacher_ids = []
     teachers = df['Teacher'].values
     for teacher in teachers:
-        teachers_ids.append(create_teacher(teacher))
-    df['TeacherID'] = teachers_ids
+        teacher_ids.append(create_teacher(teacher))
+    df['TeacherID'] = teacher_ids
     return df
 
 
@@ -109,7 +131,7 @@ def create_subgroups(df: pd.DataFrame):
     return df
 
 
-def create_lesson(lesson, school_id: int):
+async def create_lesson(lesson, school_id: int):
     lesson_name = str(lesson.LessonName)
     try:
         room = f"Кабинет №{int(lesson.Room)}"
@@ -131,36 +153,57 @@ def create_lesson(lesson, school_id: int):
         'school_id': school_id,
         'teacher_id': int(lesson.TeacherID),
     }
-    with session.post(f'{URL}/lessons', json=body) as resp:
-        res = resp.json()
+    async with async_session.post(f'{URL}/lessons', json=body) as resp:
+        res = await resp.json()
         lesson_id = res['lesson_id']
     body = {'lesson_id': lesson_id, 'subgroup_id': int(lesson.SubgroupID)}
-    with session.post(f'{URL}/lessons/subgroups', json=body) as resp:
-        assert resp.status_code // 100 == 2
+    async with async_session.post(f'{URL}/lessons/subgroups',
+                                  json=body) as resp:
+        assert resp.status // 100 == 2
 
 
-def create_lessons(df: pd.DataFrame, school_id: int):
-    c = df.shape[0] // 20
-    for i, lesson in enumerate(df.iloc):
-        create_lesson(lesson, school_id)
-        if i % c == 0:
-            print(f"{round((i + 1) / c * 5)}%")
-    return df
+async def create_lessons(df: pd.DataFrame, school_id: int):
+    global async_session
+    async_session = aiohttp.ClientSession()
+    async with asyncio.TaskGroup() as tg:
+        for lesson in df.iloc:
+            tg.create_task(create_lesson(lesson, school_id))
+    await async_session.close()
 
 
-def create_table_for_school(
+class ApiException(Exception):
+    pass
+
+
+def create_semesters(school_id: int, semesters: list[Semester]):
+    for semester in semesters:
+        body = semester.dict()
+        body['school_id'] = school_id
+        with session.post(f'{URL}/semesters', json=body) as resp:
+            if resp.status_code // 100 != 2:
+                text = f'Semester creating return {resp.status_code}'
+                raise ApiException(text)
+
+
+async def create_table_for_school(
         file: str,
         name: str,
         address: str,
-        is_university: bool
+        is_university: bool,
+        semesters: list[Semester]
 ):
     print(f'Start creating lessons for {name}')
+    start_time = monotonic()
+
     df: pd.DataFrame = parse_table(file)
     school_id = create_school(name, address, is_university)
     df = create_teachers(df)
     df = create_classes(school_id, df)
     df = create_subgroups(df)
-    create_lessons(df, school_id)
+    create_semesters(school_id, semesters)
+    await create_lessons(df, school_id)
+
+    print("Creating time:", monotonic() - start_time)
 
 
 def create_all():
@@ -175,12 +218,19 @@ def create_all():
             'file': './timetables/lyceum_2.csv',
             'name': 'Лицей №2',
             'address': 'Иркутск, пер. Волконского, 7',
-            'is_university': False
+            'is_university': False,
+            'semesters': [
+                Semester(
+                    start_date=dt.date(2022, 9, 7),
+                    end_date=dt.date(2022, 12, 30),
+                    week_reverse=None
+                )
+            ]
          }
     ]
 
     for school in schools:
-        create_table_for_school(**school)
+        asyncio.run(create_table_for_school(**school))
 
 
 if __name__ == "__main__":
