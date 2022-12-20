@@ -7,7 +7,7 @@ install_requires = [
 ]
 
 setup(
-    name='async_lyceum_creator',
+    name='lesson_creator',
     version="0.0.0.dev1",
     description='Lyceum lesson creator on',
     platforms=['POSIX'],
@@ -17,7 +17,7 @@ setup(
     zip_safe=False,
     entry_points={
         'console_scripts': [
-            'create_lessons=async_lyceum_creator.main:create_all',
+            'create_lessons=lesson_creator.main:create_all',
         ]
     }
 )
