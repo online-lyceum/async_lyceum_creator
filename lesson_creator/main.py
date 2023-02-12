@@ -44,9 +44,10 @@ URL = None
 
 
 def create_teacher(teacher: str) -> int:
+    if not isinstance(teacher, str):
+        teacher = ''
     if teacher in teachers_cache.keys():
         return teachers_cache[teacher]
-
     body = {'name': teacher}
     with session.get(f'{URL}/teachers', json=body) as resp:
         if resp.status_code == 200:
@@ -131,7 +132,7 @@ def create_subgroups(df: pd.DataFrame):
     return df
 
 
-async def create_lesson(lesson, school_id: int):
+async def create_lesson(lesson, school_id: int, semester_id: int):
     lesson_name = str(lesson.LessonName)
     try:
         room = f"Кабинет №{int(lesson.Room)}"
@@ -147,11 +148,12 @@ async def create_lesson(lesson, school_id: int):
             'hour': int(lesson.EndHour),
             'minute': int(lesson.EndMinute)
         },
-        'week': int(lesson.Week),
+        'is_odd_week': int(lesson.Week),
         'weekday': int(lesson.Weekday),
         'room': room,
-        'school_id': school_id,
+        'school_id': int(school_id),
         'teacher_id': int(lesson.TeacherID),
+        'semester_id': semester_id
     }
     async with async_session.post(f'{URL}/lessons', json=body) as resp:
         res = await resp.json()
@@ -162,12 +164,12 @@ async def create_lesson(lesson, school_id: int):
         assert resp.status // 100 == 2
 
 
-async def create_lessons(df: pd.DataFrame, school_id: int):
+async def create_lessons(df: pd.DataFrame, school_id: int, semester_id: int):
     global async_session
     async_session = aiohttp.ClientSession()
     async with asyncio.TaskGroup() as tg:
         for lesson in df.iloc:
-            tg.create_task(create_lesson(lesson, school_id))
+            tg.create_task(create_lesson(lesson, school_id, semester_id))
     await async_session.close()
 
 
@@ -175,14 +177,17 @@ class ApiException(Exception):
     pass
 
 
-def create_semesters(school_id: int, semesters: list[Semester]):
-    for semester in semesters:
-        body = semester.dict()
-        body['school_id'] = school_id
-        with session.post(f'{URL}/semesters', json=body) as resp:
-            if resp.status_code // 100 != 2:
-                text = f'Semester creating return {resp.status_code}'
-                raise ApiException(text)
+def create_semester(
+        school_id: int,
+        semester: Semester
+) -> int:
+    body = semester.dict()
+    body['school_id'] = school_id
+    with session.post(f'{URL}/semesters', json=body) as resp:
+        if resp.status_code // 100 != 2:
+            text = f'Semester creating return {resp.status_code}'
+            raise ApiException(text)
+        return resp.json()['semester_id']
 
 
 async def create_table_for_school(
@@ -190,7 +195,7 @@ async def create_table_for_school(
         name: str,
         address: str,
         is_university: bool,
-        semesters: list[Semester]
+        semester: Semester
 ):
     print(f'Start creating lessons for {name}')
     start_time = monotonic()
@@ -200,8 +205,9 @@ async def create_table_for_school(
     df = create_teachers(df)
     df = create_classes(school_id, df)
     df = create_subgroups(df)
-    create_semesters(school_id, semesters)
-    await create_lessons(df, school_id)
+    semester_id = create_semester(school_id, semester)
+    # semester_id = 2
+    await create_lessons(df, school_id, semester_id)
 
     print("Creating time:", monotonic() - start_time)
 
@@ -215,17 +221,16 @@ def create_all():
     print(f"URL is {URL}")
     schools = [
         {
-            'file': './timetables/lyceum_2.csv',
+            'file': './timetables/lyceum2_3.csv',
             'name': 'Лицей №2',
             'address': 'Иркутск, пер. Волконского, 7',
             'is_university': False,
-            'semesters': [
+            'semester':
                 Semester(
-                    start_date=dt.date(2022, 9, 7),
-                    end_date=dt.date(2022, 12, 30),
-                    week_reverse=None
+                    start_date=dt.date(2023, 1, 9),
+                    end_date=dt.date(2023, 5, 31),
+                    week_reverse=False
                 )
-            ]
          }
     ]
 
