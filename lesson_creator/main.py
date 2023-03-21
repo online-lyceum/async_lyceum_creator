@@ -82,11 +82,15 @@ def create_class(school_id: int, number: int, letter: str):
         return class_id
 
 
-def create_school(name: str, address: str, is_university: bool):
+def create_school(
+        name: str, address: str, 
+        is_university: bool, is_using_double_week: bool
+):
     body = {
         'name': name,
         'address': address,
-        'is_university': is_university
+        'is_university': is_university,
+        'is_using_double_week': is_using_double_week
     }
     with session.post(f'{URL}/schools', json=body) as resp:
         json_resp = resp.json()
@@ -195,13 +199,16 @@ async def create_table_for_school(
         name: str,
         address: str,
         is_university: bool,
+        is_using_double_week: bool,
         semester: Semester
 ):
     print(f'Start creating lessons for {name}')
     start_time = monotonic()
 
     df: pd.DataFrame = parse_table(file)
-    school_id = create_school(name, address, is_university)
+    school_id = create_school(
+            name, address, is_university, is_using_double_week
+    )
     df = create_teachers(df)
     df = create_classes(school_id, df)
     df = create_subgroups(df)
@@ -225,6 +232,7 @@ def create_all():
             'name': 'Лицей №2',
             'address': 'Иркутск, пер. Волконского, 7',
             'is_university': False,
+            'is_using_double_week': False,
             'semester':
                 Semester(
                     start_date=dt.date(2023, 1, 9),
