@@ -41,6 +41,7 @@ subgroups_cache = {}
 teachers_cache = {}
 
 URL = None
+auth_token = None
 
 
 def create_teacher(teacher: str) -> int:
@@ -170,7 +171,7 @@ async def create_lesson(lesson, school_id: int, semester_id: int):
 
 async def create_lessons(df: pd.DataFrame, school_id: int, semester_id: int):
     global async_session
-    async_session = aiohttp.ClientSession()
+    async_session = aiohttp.ClientSession(headers={'auth-token': auth_token})
     async with asyncio.TaskGroup() as tg:
         for lesson in df.iloc:
             tg.create_task(create_lesson(lesson, school_id, semester_id))
@@ -220,12 +221,16 @@ async def create_table_for_school(
 
 
 def create_all():
-    global URL
+    global URL, auth_token
     parser = ArgumentParser()
     parser.add_argument('-H', '--host', default='http://127.0.0.1:8080/api')
+    parser.add_argument('-t', '--token', default='123456')
     args = parser.parse_args()
     URL = args.host
+    auth_token = args.token
+    session.headers.update({'auth-token': args.token})
     print(f"URL is {URL}")
+    print(f'Token is {args.token}')
     schools = [
         {
             'file': './timetables/lyceum2_3.csv',
